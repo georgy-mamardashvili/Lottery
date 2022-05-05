@@ -7,6 +7,7 @@ import LotteryContract from './lottery-contract';
 class App extends Component {
   state = {
     manager: '',
+    currentUser: '',
     players: [],
     balance: '',
     value: '',
@@ -15,41 +16,56 @@ class App extends Component {
 
   async componentDidMount() {
     const manager = await LotteryContract.methods.manager().call();
+    const accounts = await web3.eth.getAccounts();
+    const currentUser = accounts[0];
+    const message = `Let's play a lottery!`;
+
+    this.setState({ manager, currentUser, message });
+
+    await this.updateLotteryStatistics();
+  }
+
+  async updateLotteryStatistics() {
     const players = await LotteryContract.methods.getPlayers().call();
     const balance = await web3.eth.getBalance(LotteryContract.options.address);
-
-    this.setState({ manager, players, balance });
+    this.setState({ players, balance });
   }
 
   onEnter = async (event) => {
     event.preventDefault();
-
-    const accounts = await web3.eth.getAccounts();
-
     this.setState({ message: 'Waiting on transaction success...' });
-    console.log('value: ', this.state.value);
-    await LotteryContract.methods.enter().send({
-      from: accounts[0],
-      value: web3.utils.toWei(this.state.value, 'ether'),
-    });
 
-    this.setState({ message: 'You have been entered!' });
+    try {
+      await LotteryContract.methods.enter().send({
+        from: this.state.currentUser,
+        value: web3.utils.toWei(this.state.value, 'ether'),
+      });
+      this.setState({ message: 'You have been entered!' });
+    } catch(e) {
+      this.setState({ message: 'An error occur!' });
+      console.log(e);
+    }
+    this.updateLotteryStatistics();
   }
 
   pickWinner = async () => {
-    const accounts = await web3.eth.getAccounts();
-
     this.setState({ message: 'Waiting on transaction success...' });
     
-    await LotteryContract.methods.pickWinner().send({
-      from: accounts[0],
-    });
+    try {
+      await LotteryContract.methods.pickWinner().send({
+        from: this.state.currentUser,
+      });
+      const lastWinner = await LotteryContract.methods.getLastWinner().call();
+      this.setState({ message: `A winner has been picked: ${lastWinner}` });
+    } catch(e) {
+      this.setState({ message: 'An error occur!' });
+      console.log(e);
+    }
 
-    this.setState({ message: 'A winner has been picked!' });
+    this.updateLotteryStatistics();
   }
 
   render() {
-    web3.eth.getAccounts().then(console.log);
     return (
       <div>
         <h2>Lottery Contract</h2>
@@ -62,28 +78,27 @@ class App extends Component {
         </p>
         <hr/>
         <form onSubmit={this.onEnter}>
-          <h4>Want to try your luck?</h4>
+          <h4>Hey, {this.state.currentUser}! Want to try your luck?</h4>
           <div>
             <label>Amount of ether to enter? </label>
             <input
               type='number'
+              min='0.02'
+              max='1'
               value={this.state.value}
-              onChange={event => {
-                console.log('target', event.target.value);
-                this.setState({ value: event.target.value });
-                console.log();
-              }}
+              onChange={event => this.setState({ value: event.target.value })}
               />
           </div>
           <button>Enter</button>
         </form>
-        <hr/>
+        {this.state.manager === this.state.currentUser &&
         <div>
-          <h1>Ready to pick a winner?</h1>
+          <hr/>
+          <h4>Ready to pick a winner?</h4>
           <button onClick={this.pickWinner}>Pick a winner!</button>
-        </div>
+        </div>}
         <hr/>
-        <h1>{this.state.message}</h1>
+        <h2 style={{textAlign: 'center'}} >{this.state.message}</h2>
       </div>
     );
   }
